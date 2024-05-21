@@ -1,0 +1,79 @@
+-- Initialize variables
+LatestGameState = LatestGameState or nil
+InAction = InAction or false
+local Game = "YourGameIDHere"
+
+-- Function to decide the next action
+function decideNextAction()
+    local player = LatestGameState.Players[ao.id]
+    local targetFound = false
+
+    for target, state in pairs(LatestGameState.Enemies) do
+        if target ~= ao.id then
+            local distance = math.sqrt((player.x - state.x)^2 + (player.y - state.y)^2)
+            if distance < 10 then
+                targetFound = true
+                print("Enemy in range. Attacking.")
+                -- Send attack command
+                ao.send({ Target = Game, Action = "AttackEnemy", Enemy = target })
+                return
+            end
+        end
+    end
+
+    if not targetFound then
+        print("No enemy in range. Exploring.")
+        -- Send command to explore
+        ao.send({ Target = Game, Action = "Explore" })
+    end
+end
+
+-- Handler for game state updates
+Handlers.add(
+  "UpdateGameState",
+  Handlers.utils.hasMatchingTag("Action", "GameState"),
+  function (msg)
+    local json = require("json")
+    LatestGameState = json.decode(msg.Data)
+    ao.send({Target = ao.id, Action = "UpdatedGameState"})
+    print("Game state updated.")
+  end
+)
+
+-- Handler to decide actions after game state update
+Handlers.add(
+  "DecideNextAction",
+  Handlers.utils.hasMatchingTag("Action", "UpdatedGameState"),
+  function ()
+    if LatestGameState.GameMode ~= "Playing" then
+      return
+    end
+    print("Deciding next action.")
+    decideNextAction()
+  end
+)
+
+-- Handler for player actions when attacked by enemies
+Handlers.add(
+  "ReturnAttack",
+  Handlers.utils.hasMatchingTag("Action", "Hit"),
+  function (msg)
+    print("Attacked by enemy. Retaliating.")
+    -- Send command to retaliate
+    ao.send({ Target = Game, Action = "Retaliate" })
+    InAction = false
+    ao.send({ Target = ao.id, Action = "Tick" })
+  end
+)
+
+-- Handler for periodic game state updates
+Handlers.add(
+  "GetGameStateOnTick",
+  Handlers.utils.hasMatchingTag("Action", "Tick"),
+  function ()
+    if not InAction then
+      InAction = true
+      ao.send({Target = Game, Action = "GetGameState"})
+    end
+  end
+)
